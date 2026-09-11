@@ -1,0 +1,54 @@
+---
+# Federal router of T-CaaS cluster B — a STATELESS query router.
+# See tcaas-a/03-federal.yaml for the full commentary.
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: federal
+  namespace: federal
+spec:
+  replicas: 1
+---
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: federal
+  namespace: federal
+spec:
+  replicas: 1
+  shards: 1
+  keeperClusterRef:
+    name: federal
+  containerTemplate:
+    resources:
+      requests:
+        cpu: "500m"
+        memory: 1Gi
+      limits:
+        cpu: "2"
+        memory: 2Gi
+  settings:
+    extraUsersConfig:
+      profiles:
+        default:
+          optimize_skip_unused_shards: 1
+          allow_nondeterministic_optimize_skip_unused_shards: 1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: federal-clickhouse-nodeport
+  namespace: federal
+spec:
+  type: NodePort
+  selector:
+    clickhouse.com/role: clickhouse-server
+  ports:
+    - name: http
+      port: 8123
+      targetPort: 8123
+      nodePort: 30825
+    - name: tcp
+      port: 9001
+      targetPort: 9001
+      nodePort: 30925

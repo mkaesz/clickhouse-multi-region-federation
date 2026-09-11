@@ -1,0 +1,42 @@
+<!--
+  Reference only - production shape of the GLOBAL router config. In the kind
+  demo the same shape is injected as spec.settings.extraConfig by
+  scripts/patch-federation.sh (kind node IPs + federal NodePorts).
+
+  The global router knows ONE endpoint per T-CaaS cluster: its federal
+  router. It never sees customer clusters. This file changes only when a
+  whole T-CaaS cluster joins or leaves - never per customer.
+
+  Rules encoded here:
+    * shard <name> = T-CaaS cluster id. Surfaces as
+      system.clusters.shard_name; the tenantToFederalShard dictionary joins
+      it against the tenant_placement metadata table to build the
+      tenant -> federal-shard sharding-key map for otel_global.
+    * Each federal runs >= 2 identical stateless replicas - list them as
+      <replica> entries of the same shard for automatic failover.
+    * APPEND-ONLY, same reasoning as on the federal level.
+    * <secret>: propagates the original user across the first hop. The
+      federal level's `customers` cluster carries its own secret for the
+      second hop, so leaf clusters enforce the end user's RBAC too.
+    * RECEIVER-SIDE VALIDATION: the receiving federal router validates the
+      handshake against the `federals` entry in its OWN remote_servers, so
+      every federal carries a minimal static `federals` stanza (same name +
+      secret, only itself as shard) - see federal_remote_servers.xml.
+-->
+<clickhouse>
+  <remote_servers>
+    <federals>
+      <secret from_env="CH_CLUSTER_SECRET"/>
+      <shard>
+        <name>tcaas-a</name>
+        <replica><host>federal-0.tcaas-a.example.com</host><port>9440</port><secure>1</secure></replica>
+        <replica><host>federal-1.tcaas-a.example.com</host><port>9440</port><secure>1</secure></replica>
+      </shard>
+      <shard>
+        <name>tcaas-b</name>
+        <replica><host>federal-0.tcaas-b.example.com</host><port>9440</port><secure>1</secure></replica>
+        <replica><host>federal-1.tcaas-b.example.com</host><port>9440</port><secure>1</secure></replica>
+      </shard>
+    </federals>
+  </remote_servers>
+</clickhouse>

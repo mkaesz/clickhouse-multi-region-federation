@@ -1,0 +1,58 @@
+---
+# Customer ClickHouse "cust1" (tenant1) — a data cluster (leaf of the hierarchy).
+# Holds the actual otel_local data. Knows NOTHING about federation: no
+# remote_servers entry, no knowledge of other customers, the federal router,
+# or the global router. It only accepts incoming connections.
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: cust1
+  namespace: cust1
+spec:
+  replicas: 1
+---
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: cust1
+  namespace: cust1
+spec:
+  # Single replica keeps the demo light (7 CH pods across 3 kind clusters).
+  # Production customer clusters run >= 2 replicas + a 3-node Keeper, exactly
+  # as demonstrated in design-a.
+  replicas: 1
+  shards: 1
+  keeperClusterRef:
+    name: cust1
+  containerTemplate:
+    # Same rationale as design-a: the operator's 512Mi default OOM-kills the
+    # server during system-log merges. Requests and limits must both be set.
+    resources:
+      requests:
+        cpu: "500m"
+        memory: 1Gi
+      limits:
+        cpu: "2"
+        memory: 2Gi
+---
+# Host access for demo/verification only. Federation traffic from the federal
+# router reaches this cluster in-cluster (headless-service DNS), not via
+# NodePort.
+apiVersion: v1
+kind: Service
+metadata:
+  name: cust1-clickhouse-nodeport
+  namespace: cust1
+spec:
+  type: NodePort
+  selector:
+    clickhouse.com/role: clickhouse-server
+  ports:
+    - name: http
+      port: 8123
+      targetPort: 8123
+      nodePort: 30811
+    - name: tcp
+      port: 9001
+      targetPort: 9001
+      nodePort: 30911

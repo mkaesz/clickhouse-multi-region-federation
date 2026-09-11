@@ -1,0 +1,69 @@
+---
+# Global router — the single Grafana-facing endpoint. STATELESS query router:
+# no MergeTree event data, only
+#   * the `federals` remote_servers definition (one shard per T-CaaS cluster,
+#     injected by scripts/patch-federation.sh with the cluster secret),
+#   * the otel_global Distributed table,
+#   * the tenant_placement metadata table + tenantToFederalShard dictionary
+#     (tiny, GitOps-managed placement data — the only "state" a router carries).
+#
+# It knows ONLY the federal endpoints, never the customer clusters behind
+# them. Adding a customer to a T-CaaS cluster does not touch this config.
+#
+# Production: deploy this router pair identically in two DCs (it is stateless,
+# nothing needs to replicate) and put one DNS name / GSLB in front — that name
+# is the Grafana datasource URL.
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: global
+  namespace: global
+spec:
+  replicas: 1
+---
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: global
+  namespace: global
+spec:
+  replicas: 1
+  shards: 1
+  keeperClusterRef:
+    name: global
+  containerTemplate:
+    resources:
+      requests:
+        cpu: "500m"
+        memory: 1Gi
+      limits:
+        cpu: "2"
+        memory: 2Gi
+  settings:
+    # Tenant-filtered reads must prune to the matching federal shard;
+    # otel_global's sharding key is dictGet(tenantToFederalShard, ...).
+    extraUsersConfig:
+      profiles:
+        default:
+          optimize_skip_unused_shards: 1
+          allow_nondeterministic_optimize_skip_unused_shards: 1
+---
+# Grafana-facing endpoint (host access in the demo).
+apiVersion: v1
+kind: Service
+metadata:
+  name: global-clickhouse-nodeport
+  namespace: global
+spec:
+  type: NodePort
+  selector:
+    clickhouse.com/role: clickhouse-server
+  ports:
+    - name: http
+      port: 8123
+      targetPort: 8123
+      nodePort: 30831
+    - name: tcp
+      port: 9001
+      targetPort: 9001
+      nodePort: 30931

@@ -1,0 +1,17 @@
+---
+# One namespace per ClickHouse cluster so the design-a per-namespace tooling
+# (role-label pod selection, NodePort services) carries over unchanged.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cust1
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: cust2
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: federal

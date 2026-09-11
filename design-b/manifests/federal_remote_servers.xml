@@ -1,0 +1,80 @@
+<!--
+  Reference only - production shape of the FEDERAL router config (one per
+  T-CaaS cluster). In the kind demo the same shape is injected as
+  spec.settings.extraConfig by scripts/patch-federation.sh.
+
+  This file is the ONLY thing that changes when a customer ClickHouse is
+  added to this T-CaaS cluster: append one <shard> block. It is owned by the
+  team operating this T-CaaS cluster and rolled out via GitOps (ConfigMap);
+  ClickHouse hot-reloads remote_servers, no restart needed. Neither the
+  global router nor any other T-CaaS cluster is touched.
+
+  Rules encoded here:
+    * shard <name> = tenant id. It surfaces as system.clusters.shard_name,
+      which the default.tenantToShard dictionary reads to build the
+      tenant -> (shard_num - 1) sharding-key map for otel_federal.
+    * APPEND-ONLY: never insert a shard in the middle - shard_num shifts
+      and the dictionary (LIFETIME MAX 300) lags the topology for up to
+      5 minutes, silently mis-pruning tenant-filtered reads. Append, then
+      run SYSTEM RELOAD DICTIONARY default.tenantToShard as part of rollout.
+    * Hosts are in-cluster service DNS - customer clusters are never
+      exposed outside the T-CaaS cluster.
+    * Active-active copies of the SAME tenant inside this T-CaaS cluster
+      must be listed as two <replica> entries of ONE shard (identical data),
+      never as two shards (rows would be counted twice). Copies living in
+      DIFFERENT T-CaaS clusters cannot be expressed here at all - that is
+      the GeoR placement decision, handled at the global level via
+      tenant_placement (see design-b README, "GeoR / active-active").
+    * <secret>: propagates the original querying user to the customer
+      clusters so each leaf enforces that user's RBAC. Source from a K8s
+      Secret via from_env; the demo injects a generated value.
+    * RECEIVER-SIDE VALIDATION: the secret handshake is validated by the
+      RECEIVING server, which looks the cluster name up in its OWN
+      remote_servers. Therefore every customer cluster carries a minimal
+      static `customers` stanza (same name + secret, only itself as shard,
+      NO topology - see the customer note at the bottom), and this federal
+      router carries the minimal `federals` stanza below because it receives
+      the handshake from the global router. Without these, the receiver
+      resets the inter-server connection (NETWORK_ERROR).
+-->
+<clickhouse>
+  <remote_servers>
+    <customers>
+      <secret from_env="CH_CLUSTER_SECRET"/>
+      <shard>
+        <name>tenant1</name>
+        <replica><host>cust1-clickhouse-0-0-0.cust1-clickhouse-headless.cust1.svc.cluster.local</host><port>9001</port></replica>
+      </shard>
+      <shard>
+        <name>tenant2</name>
+        <replica><host>cust2-clickhouse-0-0-0.cust2-clickhouse-headless.cust2.svc.cluster.local</host><port>9001</port></replica>
+      </shard>
+    </customers>
+    <!-- Receiver-side secret stanza for the hop from the global router:
+         same cluster name + secret as on the global side, only this node
+         as shard. Static - never changes. -->
+    <federals>
+      <secret from_env="CH_CLUSTER_SECRET"/>
+      <shard>
+        <replica><host>localhost</host><port>9000</port></replica>
+      </shard>
+    </federals>
+  </remote_servers>
+</clickhouse>
+
+<!--
+  Customer clusters (leaves) carry ONLY this static stanza - no topology,
+  never touched when siblings are added. It exists so the leaf can validate
+  the federal's secret handshake:
+
+  <clickhouse>
+    <remote_servers>
+      <customers>
+        <secret from_env="CH_CLUSTER_SECRET"/>
+        <shard>
+          <replica><host>localhost</host><port>9000</port></replica>
+        </shard>
+      </customers>
+    </remote_servers>
+  </clickhouse>
+-->

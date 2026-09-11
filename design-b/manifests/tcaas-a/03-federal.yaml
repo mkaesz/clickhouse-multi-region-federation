@@ -1,0 +1,74 @@
+---
+# Federal router of T-CaaS cluster A — a STATELESS query router.
+# Holds no MergeTree data: only the `customers` remote_servers definition
+# (injected by scripts/patch-federation.sh, with the shared cluster secret)
+# and the otel_federal Distributed table + tenantToShard dictionary.
+#
+# This is the ONLY endpoint of this T-CaaS cluster that the global router
+# needs to reach (NodePort 30915). The customer clusters behind it are
+# reached in-cluster via headless-service DNS.
+#
+# Demo note: the operator always creates `default` as a Replicated database,
+# which needs a Keeper — hence the 1-node KeeperCluster even for a "stateless"
+# router. A production router built from plain ClickHouse config (Atomic
+# default database, schema shipped via GitOps) needs no Keeper at all.
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: federal
+  namespace: federal
+spec:
+  replicas: 1
+---
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: federal
+  namespace: federal
+spec:
+  # 1 replica for the demo; production runs >= 2 identical router replicas,
+  # listed as replicas of ONE shard in the global `federals` cluster so the
+  # global router fails over between them automatically.
+  replicas: 1
+  shards: 1
+  keeperClusterRef:
+    name: federal
+  containerTemplate:
+    resources:
+      requests:
+        cpu: "500m"
+        memory: 1Gi
+      limits:
+        cpu: "2"
+        memory: 2Gi
+  settings:
+    # Tenant-filtered reads must prune to the matching customer shard.
+    # otel_federal's sharding key is dictGet(tenantToShard, ...), which
+    # ClickHouse classifies as non-deterministic, so BOTH settings are
+    # required (same pattern as design-a / LogHouse).
+    extraUsersConfig:
+      profiles:
+        default:
+          optimize_skip_unused_shards: 1
+          allow_nondeterministic_optimize_skip_unused_shards: 1
+---
+# Federation entry point of T-CaaS cluster A: the global router reaches this
+# NodePort over the shared kind network.
+apiVersion: v1
+kind: Service
+metadata:
+  name: federal-clickhouse-nodeport
+  namespace: federal
+spec:
+  type: NodePort
+  selector:
+    clickhouse.com/role: clickhouse-server
+  ports:
+    - name: http
+      port: 8123
+      targetPort: 8123
+      nodePort: 30815
+    - name: tcp
+      port: 9001
+      targetPort: 9001
+      nodePort: 30915

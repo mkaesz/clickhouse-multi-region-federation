@@ -1,0 +1,13 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: clickhouse-hierarchical-federation-demo-global
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      # global router (single Grafana-facing endpoint)
+      - containerPort: 30831
+        hostPort: 8831
+        protocol: TCP
+      - containerPort: 30931
+        hostPort: 9831
+        protocol: TCP

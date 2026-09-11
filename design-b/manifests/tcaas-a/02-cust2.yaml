@@ -1,0 +1,48 @@
+---
+# Customer ClickHouse "cust2" (tenant2) — a data cluster (leaf of the hierarchy).
+# See 01-cust1.yaml for the full commentary; identical apart from names/ports.
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: cust2
+  namespace: cust2
+spec:
+  replicas: 1
+---
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: cust2
+  namespace: cust2
+spec:
+  replicas: 1
+  shards: 1
+  keeperClusterRef:
+    name: cust2
+  containerTemplate:
+    resources:
+      requests:
+        cpu: "500m"
+        memory: 1Gi
+      limits:
+        cpu: "2"
+        memory: 2Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cust2-clickhouse-nodeport
+  namespace: cust2
+spec:
+  type: NodePort
+  selector:
+    clickhouse.com/role: clickhouse-server
+  ports:
+    - name: http
+      port: 8123
+      targetPort: 8123
+      nodePort: 30812
+    - name: tcp
+      port: 9001
+      targetPort: 9001
+      nodePort: 30912

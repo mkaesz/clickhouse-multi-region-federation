@@ -1,0 +1,20 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: clickhouse-hierarchical-federation-demo-tcaas-b
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      # cust3 (customer ClickHouse, tenant3)
+      - containerPort: 30821
+        hostPort: 8821
+        protocol: TCP
+      - containerPort: 30921
+        hostPort: 9821
+        protocol: TCP
+      # federal router (federation entry point of this T-CaaS cluster)
+      - containerPort: 30825
+        hostPort: 8825
+        protocol: TCP
+      - containerPort: 30925
+        hostPort: 9825
+        protocol: TCP

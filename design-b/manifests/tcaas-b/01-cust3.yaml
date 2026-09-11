@@ -1,0 +1,48 @@
+---
+# Customer ClickHouse "cust3" (tenant3) — a data cluster (leaf of the hierarchy)
+# in T-CaaS cluster B. See tcaas-a/01-cust1.yaml for the full commentary.
+apiVersion: clickhouse.com/v1alpha1
+kind: KeeperCluster
+metadata:
+  name: cust3
+  namespace: cust3
+spec:
+  replicas: 1
+---
+apiVersion: clickhouse.com/v1alpha1
+kind: ClickHouseCluster
+metadata:
+  name: cust3
+  namespace: cust3
+spec:
+  replicas: 1
+  shards: 1
+  keeperClusterRef:
+    name: cust3
+  containerTemplate:
+    resources:
+      requests:
+        cpu: "500m"
+        memory: 1Gi
+      limits:
+        cpu: "2"
+        memory: 2Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: cust3-clickhouse-nodeport
+  namespace: cust3
+spec:
+  type: NodePort
+  selector:
+    clickhouse.com/role: clickhouse-server
+  ports:
+    - name: http
+      port: 8123
+      targetPort: 8123
+      nodePort: 30821
+    - name: tcp
+      port: 9001
+      targetPort: 9001
+      nodePort: 30921
